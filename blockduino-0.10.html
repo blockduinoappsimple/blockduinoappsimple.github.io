@@ -1,0 +1,2483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>BlockDuino — visual Arduino programming</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0f1419;
+  --panel: #161c24;
+  --panel-2: #1d242e;
+  --ink: #e6edf3;
+  --ink-dim: #8b96a7;
+  --accent: #56d2c9;
+  --accent-2: #f4b860;
+  --line: #232b36;
+  --line-strong: #2f3a48;
+
+  --cat-flow:    #4a90e2;
+  --cat-pin:     #56d2c9;
+  --cat-ctrl:    #c678dd;
+  --cat-math:    #98c379;
+  --cat-logic:   #e5c07b;
+  --cat-var:     #e06c75;
+  --cat-serial:  #f4b860;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0;
+  background: var(--bg); color: var(--ink);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  height: 100vh;
+  overflow: hidden;
+  user-select: none;
+}
+body {
+  display: grid;
+  grid-template-columns: 220px 5px 1fr 5px 380px;
+  grid-template-rows: 52px 1fr 28px;
+  grid-template-areas:
+    "header header header header header"
+    "palette res-l workspace res-r code"
+    "footer footer footer footer footer";
+}
+.resizer {
+  background: var(--line-strong);
+  cursor: col-resize;
+  transition: background 0.15s;
+  position: relative;
+}
+.resizer:hover, .resizer.dragging {
+  background: var(--accent);
+}
+.resizer.left { grid-area: res-l; }
+.resizer.right { grid-area: res-r; }
+/* Wider invisible hit area for easier grabbing */
+.resizer::before {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  left: -3px; right: -3px;
+}
+header {
+  grid-area: header;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line-strong);
+  display: flex; align-items: center;
+  padding: 0 20px; gap: 18px;
+}
+header h1 {
+  font-family: 'Fraunces', serif;
+  font-size: 20px; font-weight: 700; margin: 0;
+  color: var(--accent);
+}
+header h1 span { color: var(--ink-dim); font-size: 12px; font-family: 'JetBrains Mono', monospace; margin-left: 8px; font-weight: 400; }
+header .right { margin-left: auto; display: flex; gap: 8px; }
+header button {
+  background: var(--panel-2); color: var(--ink);
+  border: 1px solid var(--line-strong);
+  padding: 6px 12px; font-family: inherit; font-size: 11px;
+  cursor: pointer; border-radius: 4px;
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+header button:hover { background: #252e3a; border-color: var(--accent); color: var(--accent); }
+
+#palette {
+  grid-area: palette;
+  background: var(--panel);
+  border-right: 1px solid var(--line-strong);
+  overflow-y: auto;
+  padding: 12px;
+}
+.cat-header {
+  font-family: 'Fraunces', serif;
+  font-size: 13px; font-weight: 500;
+  margin: 14px 0 6px 0; padding-left: 4px;
+  letter-spacing: 0.5px;
+}
+.cat-header:first-child { margin-top: 0; }
+.palette-block { margin: 4px 0; cursor: grab; }
+.palette-block svg { display: block; }
+
+#palette.delete-zone {
+  background: linear-gradient(to right, rgba(224, 108, 117, 0.18), var(--panel) 60%);
+  box-shadow: inset 3px 0 0 #e06c75;
+}
+#palette.delete-zone::before {
+  content: '🗑  drop to delete';
+  display: block; text-align: center;
+  color: #e06c75; font-size: 11px;
+  letter-spacing: 0.5px; padding: 6px 0 10px 0;
+  text-transform: uppercase; font-weight: 600;
+  border-bottom: 1px dashed rgba(224, 108, 117, 0.4);
+  margin-bottom: 10px;
+}
+
+#workspace {
+  grid-area: workspace;
+  position: relative;
+  background:
+    radial-gradient(circle at 15% 25%, rgba(86,210,201,0.04) 0%, transparent 50%),
+    radial-gradient(circle at 85% 75%, rgba(244,184,96,0.04) 0%, transparent 50%),
+    var(--bg);
+  overflow: hidden;
+}
+#workspace-svg { display: block; width: 100%; height: 100%; cursor: default; }
+#drag-overlay {
+  position: fixed; top: 0; left: 0;
+  width: 100vw; height: 100vh;
+  pointer-events: none; z-index: 50;
+}
+
+#code-panel {
+  grid-area: code;
+  background: var(--panel);
+  border-left: 1px solid var(--line-strong);
+  display: flex; flex-direction: column;
+}
+.code-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line-strong);
+}
+.code-header h2 {
+  font-family: 'Fraunces', serif;
+  font-size: 14px; font-weight: 500; margin: 0;
+  color: var(--accent-2);
+}
+.code-header button {
+  background: var(--panel-2); color: var(--ink-dim);
+  border: 1px solid var(--line-strong);
+  padding: 4px 10px; font-family: inherit; font-size: 10px;
+  cursor: pointer; border-radius: 3px;
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.code-header button:hover { color: var(--accent); border-color: var(--accent); }
+#code-output {
+  flex: 1; overflow: auto;
+  padding: 12px 16px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px; line-height: 1.6;
+  white-space: pre; color: var(--ink);
+}
+.code-comment { color: var(--ink-dim); font-style: italic; }
+.code-kw { color: #c678dd; }
+.code-type { color: var(--accent); }
+.code-num { color: var(--accent-2); }
+.code-str { color: #98c379; }
+.code-fn { color: #61afef; }
+
+footer {
+  grid-area: footer;
+  background: var(--panel);
+  border-top: 1px solid var(--line-strong);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 16px;
+  font-size: 10px; color: var(--ink-dim);
+}
+.toast {
+  position: fixed;
+  bottom: 50px; left: 50%; transform: translateX(-50%);
+  background: var(--panel-2); border: 1px solid var(--accent);
+  color: var(--accent); padding: 10px 18px;
+  border-radius: 4px; font-size: 12px;
+  opacity: 0; transition: opacity 0.3s;
+  pointer-events: none; z-index: 100;
+}
+.toast.show { opacity: 1; }
+
+text { font-family: 'JetBrains Mono', monospace; font-size: 12px; fill: white; pointer-events: none; }
+text.bold { font-weight: 600; }
+.block-shape { cursor: grab; }
+.block-shape:hover { filter: brightness(1.1); }
+
+.field-input {
+  background: rgba(0,0,0,0.25);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: white;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  padding: 2px 5px;
+  border-radius: 3px;
+  outline: none;
+  width: 40px; text-align: center;
+}
+.field-input.wide { width: 90px; text-align: left; }
+.field-input:focus { border-color: var(--accent-2); }
+.field-input::-webkit-outer-spin-button,
+.field-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.field-input[type=number] { -moz-appearance: textfield; }
+.field-select {
+  background: rgba(0,0,0,0.3);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: white;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  outline: none; cursor: pointer;
+}
+.snap-indicator { fill: var(--accent-2); stroke: white; stroke-width: 1.5; }
+
+/* Serial Monitor styles */
+.serial-btn {
+  background: linear-gradient(135deg, #56d2c9 0%, #4a90e2 100%) !important;
+  color: #0f1419 !important;
+  border: none !important;
+  font-weight: 600 !important;
+}
+.serial-btn:hover { filter: brightness(1.1); }
+.serial-btn.connected {
+  background: linear-gradient(135deg, #7ed4a8 0%, #56d2c9 100%) !important;
+}
+.serial-btn.connected::before {
+  content: '●';
+  color: #2a8a5f;
+  margin-right: 4px;
+  animation: pulse 1.5s infinite;
+}
+
+/* Download button */
+.download-btn {
+  background: linear-gradient(135deg, #98c379 0%, #56d2c9 100%) !important;
+  color: #0f1419 !important;
+  border: none !important;
+  font-weight: 600 !important;
+}
+.download-btn:hover { filter: brightness(1.1); }
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+#serial-panel {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  height: 50vh;
+  background: var(--panel);
+  border-top: 2px solid var(--line-strong);
+  box-shadow: 0 -8px 24px rgba(0,0,0,0.5);
+  transform: translateY(100%);
+  transition: transform 0.25s ease;
+  display: flex;
+  flex-direction: column;
+  z-index: 150;
+}
+#serial-panel.show { transform: translateY(0); }
+.serial-header {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--line-strong);
+  gap: 12px;
+}
+.serial-header h2 {
+  font-family: 'Fraunces', serif;
+  font-size: 16px; font-weight: 500;
+  margin: 0; color: var(--accent);
+}
+.serial-status {
+  font-size: 11px; color: var(--ink-dim);
+  padding: 3px 8px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 3px;
+}
+.serial-status.connected { color: var(--good, #7ed4a8); background: rgba(126, 212, 168, 0.1); }
+.serial-status.connected::before { content: '● '; }
+.serial-status.error { color: #e06c75; }
+.serial-controls {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.serial-controls select, .serial-controls button {
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+  padding: 5px 10px;
+  font-family: inherit; font-size: 11px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.serial-controls button:hover { border-color: var(--accent); color: var(--accent); }
+.serial-controls button.primary {
+  background: var(--accent);
+  color: #0f1419;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+.serial-controls button.primary:hover { filter: brightness(1.1); color: #0f1419; }
+.serial-controls button.danger {
+  background: rgba(224, 108, 117, 0.15);
+  border-color: #e06c75;
+  color: #e06c75;
+}
+.serial-controls label {
+  font-size: 10px;
+  color: var(--ink-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.serial-output {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: #0a0d12;
+}
+.serial-line {
+  display: flex;
+  gap: 10px;
+  padding: 1px 0;
+}
+.serial-line .ts {
+  color: var(--ink-dim);
+  font-size: 10px;
+  flex-shrink: 0;
+  padding-top: 1px;
+  user-select: text;
+}
+.serial-line .msg {
+  flex: 1;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
+}
+.serial-line.sent .msg { color: var(--accent-2); }
+.serial-line.sent .msg::before { content: '→ '; opacity: 0.6; }
+.serial-line.system .msg { color: var(--ink-dim); font-style: italic; }
+.serial-line.error .msg { color: #e06c75; }
+.serial-input-row {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--panel-2);
+  border-top: 1px solid var(--line-strong);
+}
+.serial-input-row input {
+  flex: 1;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+  padding: 6px 10px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  border-radius: 3px;
+  outline: none;
+}
+.serial-input-row input:focus { border-color: var(--accent); }
+.serial-input-row input:disabled { opacity: 0.5; }
+.serial-input-row button {
+  background: var(--accent);
+  color: #0f1419;
+  border: none;
+  padding: 6px 16px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 3px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.serial-input-row button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Themed scrollbars to match the dark UI */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--panel);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 5px;
+  border: 2px solid var(--panel);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-dim);
+}
+::-webkit-scrollbar-corner {
+  background: var(--panel);
+}
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) var(--panel);
+}
+.socket-highlight {
+  fill: rgba(244, 184, 96, 0.5);
+  stroke: var(--accent-2);
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+/* Modal for function creation */
+.modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: none; align-items: center; justify-content: center;
+  z-index: 200;
+}
+.modal-backdrop.show { display: flex; }
+.modal {
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 24px;
+  width: 480px;
+  max-width: 90vw;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+.modal h2 {
+  font-family: 'Fraunces', serif;
+  font-size: 20px; font-weight: 500;
+  margin: 0 0 16px 0;
+  color: var(--accent);
+}
+.modal label {
+  display: block;
+  font-size: 11px; color: var(--ink-dim);
+  text-transform: uppercase; letter-spacing: 0.5px;
+  margin: 12px 0 4px 0;
+}
+.modal input[type=text] {
+  width: 100%;
+  background: var(--panel-2);
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+  padding: 8px 10px;
+  font-family: inherit; font-size: 13px;
+  border-radius: 4px; outline: none;
+}
+.modal input[type=text]:focus { border-color: var(--accent); }
+.modal input[type=checkbox] {
+  margin-right: 8px;
+  vertical-align: middle;
+}
+.checkbox-row {
+  display: flex; align-items: center;
+  margin: 12px 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+.params-list { margin: 8px 0; }
+.param-row {
+  display: flex; gap: 6px;
+  align-items: center;
+  margin: 6px 0;
+}
+.param-row input[type=text] { flex: 1; }
+.param-row select, .modal select {
+  background: var(--panel-2);
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+  padding: 6px 8px;
+  font-family: inherit; font-size: 12px;
+  border-radius: 4px; outline: none;
+  cursor: pointer;
+}
+.param-row button.remove {
+  background: rgba(224, 108, 117, 0.15);
+  border: 1px solid #e06c75;
+  color: #e06c75;
+  padding: 4px 10px;
+  font-family: inherit; font-size: 11px;
+  border-radius: 4px; cursor: pointer;
+}
+.btn-row {
+  margin-top: 20px;
+  display: flex; gap: 8px; justify-content: flex-end;
+}
+.modal button.add-param {
+  background: var(--panel-2);
+  border: 1px dashed var(--line-strong);
+  color: var(--ink-dim);
+  padding: 6px 12px;
+  font-family: inherit; font-size: 11px;
+  border-radius: 4px; cursor: pointer;
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.modal button.add-param:hover { color: var(--accent); border-color: var(--accent); }
+.modal button.primary {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: #0f1419;
+  padding: 8px 16px;
+  font-family: inherit; font-size: 12px;
+  border-radius: 4px; cursor: pointer;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  font-weight: 600;
+}
+.modal button.secondary {
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  color: var(--ink-dim);
+  padding: 8px 16px;
+  font-family: inherit; font-size: 12px;
+  border-radius: 4px; cursor: pointer;
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.modal button.danger {
+  background: rgba(224, 108, 117, 0.15);
+  border: 1px solid #e06c75;
+  color: #e06c75;
+  padding: 8px 16px;
+  font-family: inherit; font-size: 12px;
+  border-radius: 4px; cursor: pointer;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  margin-right: auto;
+}
+.return-row {
+  display: none;
+  gap: 8px; align-items: center;
+}
+.return-row.show { display: flex; }
+
+/* "Make a function..." button in palette */
+.make-function-btn {
+  width: 100%;
+  background: linear-gradient(135deg, #ff6b9d 0%, #c678dd 100%);
+  border: none;
+  color: white;
+  padding: 8px 10px;
+  font-family: inherit; font-size: 11px; font-weight: 600;
+  border-radius: 4px; cursor: pointer;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  margin: 4px 0 8px 0;
+}
+.make-function-btn:hover { filter: brightness(1.1); }
+
+.func-edit-btn {
+  background: rgba(0,0,0,0.3);
+  border: 1px solid rgba(255,255,255,0.3);
+  color: white;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: inherit;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>BlockDuino <span>v0.10 · Arduino Uno</span></h1>
+  <div class="right">
+    <button id="b-download" class="download-btn">⬇ Download .ino</button>
+    <button id="b-serial" class="serial-btn">📡 Serial Monitor</button>
+    <button id="b-clear">Clear</button>
+    <button id="b-save">Save</button>
+    <button id="b-load">Load</button>
+    <button id="b-example">Example</button>
+  </div>
+</header>
+
+<aside id="palette"></aside>
+
+<div class="resizer left" id="resizer-left"></div>
+
+<div id="workspace">
+  <svg id="workspace-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+</div>
+
+<div class="resizer right" id="resizer-right"></div>
+
+<svg id="drag-overlay" xmlns="http://www.w3.org/2000/svg"></svg>
+
+<div id="code-panel">
+  <div class="code-header">
+    <h2>Arduino Code</h2>
+    <button id="b-copy">Copy</button>
+  </div>
+  <pre id="code-output"></pre>
+</div>
+
+<footer>
+  <span>BlockDuino — visual Arduino programming</span>
+  <span id="f-status">Drag a block to start.</span>
+</footer>
+
+<!-- Serial Monitor panel -->
+<div id="serial-panel">
+  <div class="serial-header">
+    <h2>📡 Serial Monitor</h2>
+    <span class="serial-status" id="serial-status">disconnected</span>
+    <div class="serial-controls">
+      <label>Baud
+        <select id="serial-baud">
+          <option value="9600" selected>9600</option>
+          <option value="19200">19200</option>
+          <option value="38400">38400</option>
+          <option value="57600">57600</option>
+          <option value="115200">115200</option>
+        </select>
+      </label>
+      <label>Ending
+        <select id="serial-ending">
+          <option value="\n" selected>Newline</option>
+          <option value="\r\n">CR+LF</option>
+          <option value="">None</option>
+        </select>
+      </label>
+      <label style="display:flex;align-items:center;cursor:pointer;">
+        <input type="checkbox" id="serial-timestamps" checked style="margin-right:4px;">
+        Timestamps
+      </label>
+      <button id="serial-pause">⏸ Pause</button>
+      <button id="serial-clear">Clear</button>
+      <button id="serial-connect" class="primary">Connect</button>
+      <button id="serial-close">✕ Close</button>
+    </div>
+  </div>
+  <div class="serial-output" id="serial-output"></div>
+  <div class="serial-input-row">
+    <input type="text" id="serial-input" placeholder="Type to send to Arduino..." disabled>
+    <button id="serial-send" disabled>Send</button>
+  </div>
+</div>
+
+<!-- Download .ino modal -->
+<div class="modal-backdrop" id="dl-modal">
+  <div class="modal" style="width:420px;">
+    <h2>Download as Arduino sketch</h2>
+    <p style="color:var(--ink-dim);font-size:12px;margin:0 0 12px 0;line-height:1.5;">
+      Pick a name for your sketch. Arduino expects this to match the folder it lives in (no spaces, letters/numbers/underscores).
+    </p>
+    <label>Sketch name</label>
+    <input type="text" id="dl-name" placeholder="myProject" autocomplete="off" value="blockduinoSketch">
+    <p style="color:var(--ink-dim);font-size:11px;margin:12px 0 0 0;line-height:1.5;">
+      💡 <strong>To upload to your Arduino:</strong> open the downloaded <code>.ino</code> file in the Arduino IDE, pick your board and port under Tools, then click the Upload arrow.
+    </p>
+    <div class="btn-row">
+      <button class="secondary" id="dl-cancel">Cancel</button>
+      <button class="primary" id="dl-go">Download</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- Function creation/edit modal -->
+<div class="modal-backdrop" id="fn-modal">
+  <div class="modal">
+    <h2 id="fn-modal-title">Make a function</h2>
+
+    <label>Function name</label>
+    <input type="text" id="fn-name" placeholder="e.g. blink, fadeUp, readSensor" autocomplete="off">
+
+    <label>Parameters</label>
+    <div class="params-list" id="fn-params"></div>
+    <button class="add-param" id="fn-add-param">+ Add parameter</button>
+
+    <label class="checkbox-row" style="margin-top: 20px;">
+      <input type="checkbox" id="fn-returns">
+      <span>This function returns a value</span>
+    </label>
+
+    <div class="return-row" id="fn-return-row">
+      <label style="margin: 0;">Return type</label>
+      <select id="fn-return-type">
+        <option value="number">number</option>
+        <option value="boolean">boolean</option>
+      </select>
+    </div>
+
+    <div class="btn-row">
+      <button class="danger" id="fn-delete" style="display:none;">Delete function</button>
+      <button class="secondary" id="fn-cancel">Cancel</button>
+      <button class="primary" id="fn-save">Create</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// BlockDuino v0.5 — with proper value sockets
+// ============================================================
+// Block model:
+//   { id, def, x, y, fields:{name->val}, inputs:{name->blockId|null},
+//     next:id|null, children:[id], parent:id|null,
+//     parentType: 'next'|'child'|'input', parentSlot: string|null }
+// Block definitions:
+//   kind: 'hat' (top-only stack), 'statement' (stack block), 'reporter' (round value block)
+//   parts: ordered list describing what's in the header. Each part is:
+//     { text: "..." }              — label text
+//     { field: name, type, ... }   — editable field (literal, lives in fields[])
+//     { input: name, valueType, default } — value socket (lives in inputs[])
+//   valueType: 'number' | 'boolean' | 'any'
+//   isContainer: true if there's a "mouth" with children
+//   code(b, gen) returns:
+//     statement -> a single C++ line (no trailing newline, no leading indent)
+//     reporter  -> a C++ expression string
+//   output: for reporters, 'number' | 'boolean'
+// ============================================================
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const STORE_KEY = 'blockduino_save_v06';
+
+// ----------------------------------------------------------
+// Categories
+// ----------------------------------------------------------
+const CATEGORIES = [
+  { id: 'flow',   name: 'Setup / Loop', colorHex: '#4a90e2' },
+  { id: 'pin',    name: 'Pins / IO',    colorHex: '#56d2c9' },
+  { id: 'ctrl',   name: 'Control',      colorHex: '#c678dd' },
+  { id: 'math',   name: 'Math',         colorHex: '#98c379' },
+  { id: 'logic',  name: 'Logic',        colorHex: '#e5c07b' },
+  { id: 'var',    name: 'Variables',    colorHex: '#e06c75' },
+  { id: 'serial', name: 'Serial',       colorHex: '#f4b860' },
+  { id: 'func',   name: 'My Functions', colorHex: '#ff6b9d' },
+];
+
+// ----------------------------------------------------------
+// Block definitions
+// ----------------------------------------------------------
+// Parts use this DSL:
+//   t:"text"                                    — plain label segment
+//   f:{name,type,default,options?}              — editable field
+//   i:{name,valueType,default}                  — value socket (input)
+const BLOCK_DEFS = {
+
+  // ---- HAT / CONTAINERS ----
+  setup: {
+    cat: 'flow', kind: 'hat', isContainer: true,
+    parts: [{t:'on start (setup)'}],
+    code: (b, gen) => `void setup() {\n${gen.children(b, '  ')}}\n`,
+  },
+  loop: {
+    cat: 'flow', kind: 'hat', isContainer: true,
+    parts: [{t:'forever (loop)'}],
+    code: (b, gen) => `void loop() {\n${gen.children(b, '  ')}}\n`,
+  },
+
+  // ---- PINS / IO ----
+  pinMode: {
+    cat: 'pin', kind: 'statement',
+    parts: [
+      {t:'set pin'}, {f:{name:'pin', type:'number', default:13}},
+      {t:'as'},      {f:{name:'mode', type:'select', default:'OUTPUT', options:['OUTPUT','INPUT','INPUT_PULLUP']}},
+    ],
+    code: (b) => `pinMode(${b.fields.pin}, ${b.fields.mode});`,
+  },
+  digitalWrite: {
+    cat: 'pin', kind: 'statement',
+    parts: [
+      {t:'digital write pin'}, {f:{name:'pin', type:'number', default:13}},
+      {t:'to'},                {f:{name:'value', type:'select', default:'HIGH', options:['HIGH','LOW']}},
+    ],
+    code: (b) => `digitalWrite(${b.fields.pin}, ${b.fields.value});`,
+  },
+  analogWrite: {
+    cat: 'pin', kind: 'statement',
+    parts: [
+      {t:'PWM write pin'}, {f:{name:'pin', type:'number', default:9}},
+      {t:'value'},         {i:{name:'value', valueType:'number', default:'128'}},
+    ],
+    code: (b, gen) => `analogWrite(${b.fields.pin}, ${gen.input(b, 'value')});`,
+  },
+  digitalRead: {
+    cat: 'pin', kind: 'reporter', output: 'number',
+    parts: [{t:'read digital pin'}, {f:{name:'pin', type:'number', default:2}}],
+    code: (b) => `digitalRead(${b.fields.pin})`,
+  },
+  analogRead: {
+    cat: 'pin', kind: 'reporter', output: 'number',
+    parts: [{t:'read analog A'}, {f:{name:'pin', type:'number', default:0}}],
+    code: (b) => `analogRead(A${b.fields.pin})`,
+  },
+
+  // ---- CONTROL ----
+  delay: {
+    cat: 'ctrl', kind: 'statement',
+    parts: [{t:'wait'}, {i:{name:'ms', valueType:'number', default:'1000'}}, {t:'ms'}],
+    code: (b, gen) => `delay(${gen.input(b, 'ms')});`,
+  },
+  if: {
+    cat: 'ctrl', kind: 'statement', isContainer: true,
+    parts: [{t:'if'}, {i:{name:'cond', valueType:'boolean', default:'true'}}],
+    code: (b, gen) => `if (${gen.input(b, 'cond')}) {\n${gen.children(b, gen.indent + '  ')}${gen.indent}}`,
+  },
+  while: {
+    cat: 'ctrl', kind: 'statement', isContainer: true,
+    parts: [{t:'while'}, {i:{name:'cond', valueType:'boolean', default:'true'}}],
+    code: (b, gen) => `while (${gen.input(b, 'cond')}) {\n${gen.children(b, gen.indent + '  ')}${gen.indent}}`,
+  },
+  for: {
+    cat: 'ctrl', kind: 'statement', isContainer: true,
+    parts: [
+      {t:'repeat'}, {i:{name:'count', valueType:'number', default:'10'}},
+      {t:'times using'}, {f:{name:'var', type:'text', default:'i'}},
+    ],
+    code: (b, gen) => `for (int ${b.fields.var} = 0; ${b.fields.var} < ${gen.input(b, 'count')}; ${b.fields.var}++) {\n${gen.children(b, gen.indent + '  ')}${gen.indent}}`,
+  },
+
+  // ---- MATH (reporters) ----
+  mathNumber: {
+    cat: 'math', kind: 'reporter', output: 'number',
+    parts: [{f:{name:'n', type:'number', default:0}}],
+    code: (b) => String(b.fields.n),
+  },
+  mathOp: {
+    cat: 'math', kind: 'reporter', output: 'number',
+    parts: [
+      {i:{name:'a', valueType:'number', default:'0'}},
+      {f:{name:'op', type:'select', default:'+', options:['+','-','×','÷','%']}},
+      {i:{name:'b', valueType:'number', default:'0'}},
+    ],
+    code: (b, gen) => {
+      const opMap = { '+':'+', '-':'-', '×':'*', '÷':'/', '%':'%' };
+      const op = opMap[b.fields.op] || '+';
+      return `(${gen.input(b,'a')} ${op} ${gen.input(b,'b')})`;
+    },
+  },
+  mathRandom: {
+    cat: 'math', kind: 'reporter', output: 'number',
+    parts: [
+      {t:'random from'}, {i:{name:'min', valueType:'number', default:'0'}},
+      {t:'to'},          {i:{name:'max', valueType:'number', default:'100'}},
+    ],
+    code: (b, gen) => `random(${gen.input(b,'min')}, (${gen.input(b,'max')}) + 1)`,
+  },
+
+  // ---- LOGIC (reporters) ----
+  logicCompare: {
+    cat: 'logic', kind: 'reporter', output: 'boolean',
+    parts: [
+      {i:{name:'a', valueType:'number', default:'0'}},
+      {f:{name:'op', type:'select', default:'==', options:['==','≠','<','>','≤','≥']}},
+      {i:{name:'b', valueType:'number', default:'0'}},
+    ],
+    code: (b, gen) => {
+      const opMap = { '==':'==', '≠':'!=', '<':'<', '>':'>', '≤':'<=', '≥':'>=' };
+      const op = opMap[b.fields.op] || '==';
+      return `(${gen.input(b,'a')} ${op} ${gen.input(b,'b')})`;
+    },
+  },
+  logicAnd: {
+    cat: 'logic', kind: 'reporter', output: 'boolean',
+    parts: [
+      {i:{name:'a', valueType:'boolean', default:'true'}},
+      {t:'and'},
+      {i:{name:'b', valueType:'boolean', default:'true'}},
+    ],
+    code: (b, gen) => `(${gen.input(b,'a')} && ${gen.input(b,'b')})`,
+  },
+  logicOr: {
+    cat: 'logic', kind: 'reporter', output: 'boolean',
+    parts: [
+      {i:{name:'a', valueType:'boolean', default:'true'}},
+      {t:'or'},
+      {i:{name:'b', valueType:'boolean', default:'true'}},
+    ],
+    code: (b, gen) => `(${gen.input(b,'a')} || ${gen.input(b,'b')})`,
+  },
+  logicNot: {
+    cat: 'logic', kind: 'reporter', output: 'boolean',
+    parts: [{t:'not'}, {i:{name:'a', valueType:'boolean', default:'true'}}],
+    code: (b, gen) => `(!${gen.input(b,'a')})`,
+  },
+  logicTrue: {
+    cat: 'logic', kind: 'reporter', output: 'boolean',
+    parts: [{t:'true'}],
+    code: () => 'true',
+  },
+  logicFalse: {
+    cat: 'logic', kind: 'reporter', output: 'boolean',
+    parts: [{t:'false'}],
+    code: () => 'false',
+  },
+
+  // ---- VARIABLES ----
+  varGet: {
+    cat: 'var', kind: 'reporter', output: 'number',
+    parts: [{t:'get'}, {f:{name:'var', type:'text', default:'x'}}],
+    code: (b, gen) => { gen.declareInt(b.fields.var); return b.fields.var; },
+  },
+  varSet: {
+    cat: 'var', kind: 'statement',
+    parts: [
+      {t:'set'}, {f:{name:'var', type:'text', default:'x'}},
+      {t:'to'},  {i:{name:'value', valueType:'number', default:'0'}},
+    ],
+    code: (b, gen) => { gen.declareInt(b.fields.var); return `${b.fields.var} = ${gen.input(b, 'value')};`; },
+  },
+  varChange: {
+    cat: 'var', kind: 'statement',
+    parts: [
+      {t:'change'}, {f:{name:'var', type:'text', default:'x'}},
+      {t:'by'},     {i:{name:'amount', valueType:'number', default:'1'}},
+    ],
+    code: (b, gen) => { gen.declareInt(b.fields.var); return `${b.fields.var} += ${gen.input(b, 'amount')};`; },
+  },
+
+  // ---- SERIAL ----
+  serialBegin: {
+    cat: 'serial', kind: 'statement',
+    parts: [{t:'serial begin at'}, {f:{name:'baud', type:'select', default:'9600', options:['9600','19200','38400','57600','115200']}}],
+    code: (b) => `Serial.begin(${b.fields.baud});`,
+  },
+  serialPrint: {
+    cat: 'serial', kind: 'statement',
+    parts: [{t:'serial print'}, {i:{name:'value', valueType:'any', default:'"hello"'}}],
+    code: (b, gen) => `Serial.print(${gen.input(b, 'value')});`,
+  },
+  serialPrintln: {
+    cat: 'serial', kind: 'statement',
+    parts: [{t:'serial println'}, {i:{name:'value', valueType:'any', default:'"hello"'}}],
+    code: (b, gen) => `Serial.println(${gen.input(b, 'value')});`,
+  },
+};
+
+// ----------------------------------------------------------
+// State
+// ----------------------------------------------------------
+const state = {
+  blocks: new Map(),
+  topBlocks: new Set(),
+  nextId: 1,
+  dragging: null,
+  // User-defined functions: id -> { id, name, params:[{name,type}], returns, returnType }
+  functions: new Map(),
+  nextFuncId: 1,
+};
+function uid() { return 'b' + (state.nextId++); }
+function funcId() { return 'fn' + (state.nextFuncId++); }
+
+// ----------------------------------------------------------
+// Function management: dynamic block defs per user function
+// ----------------------------------------------------------
+// For each user function we generate three block defs:
+//   defineFunc_<fid>  — the hat block in the workspace
+//   callFunc_<fid>    — the call block in the palette
+//   paramGet_<fid>_<paramName> — a reporter for each parameter (visible while editing body)
+// We rebuild these whenever the function list changes.
+
+function safeIdent(name) {
+  // sanitize a name to be a valid C identifier
+  return (name || '').replace(/[^a-zA-Z0-9_]/g, '_').replace(/^(\d)/, '_$1') || 'fn';
+}
+
+function rebuildFunctionDefs() {
+  // Remove existing func defs from BLOCK_DEFS
+  for (const k of Object.keys(BLOCK_DEFS)) {
+    if (k.startsWith('defineFunc_') || k.startsWith('callFunc_') || k.startsWith('paramGet_') || k.startsWith('returnFunc_')) {
+      delete BLOCK_DEFS[k];
+    }
+  }
+  for (const [fid, fn] of state.functions) {
+    const safeName = safeIdent(fn.name);
+
+    // 1. Definition hat block
+    const defParts = [{ t: 'define ' + fn.name }];
+    for (const p of fn.params) {
+      defParts.push({ t: p.name + ':' + p.type });
+    }
+    BLOCK_DEFS['defineFunc_' + fid] = {
+      cat: 'func', kind: 'hat', isContainer: true,
+      funcId: fid,
+      parts: defParts,
+      code: (b, gen) => {
+        const retType = fn.returns ? (fn.returnType === 'boolean' ? 'bool' : 'int') : 'void';
+        const args = fn.params.map(p => (p.type === 'boolean' ? 'bool' : 'int') + ' ' + safeIdent(p.name)).join(', ');
+        return `${retType} ${safeName}(${args}) {\n${gen.children(b, '  ')}}\n`;
+      },
+    };
+
+    // 2. Call block — statement or reporter depending on returns
+    const callParts = [{ t: (fn.returns ? '' : 'call ') + fn.name }];
+    for (const p of fn.params) {
+      callParts.push({ t: p.name });
+      callParts.push({ i: { name: p.name, valueType: p.type, default: (p.type === 'boolean' ? 'true' : '0') } });
+    }
+    if (fn.returns) {
+      BLOCK_DEFS['callFunc_' + fid] = {
+        cat: 'func', kind: 'reporter', output: fn.returnType,
+        funcId: fid,
+        parts: callParts,
+        code: (b, gen) => {
+          const args = fn.params.map(p => gen.input(b, p.name)).join(', ');
+          return `${safeName}(${args})`;
+        },
+      };
+    } else {
+      BLOCK_DEFS['callFunc_' + fid] = {
+        cat: 'func', kind: 'statement',
+        funcId: fid,
+        parts: callParts,
+        code: (b, gen) => {
+          const args = fn.params.map(p => gen.input(b, p.name)).join(', ');
+          return `${safeName}(${args});`;
+        },
+      };
+    }
+
+    // 3. Parameter getter reporter for each param
+    for (const p of fn.params) {
+      BLOCK_DEFS['paramGet_' + fid + '_' + p.name] = {
+        cat: 'func', kind: 'reporter', output: p.type,
+        funcId: fid, paramName: p.name,
+        parts: [{ t: p.name }],
+        code: () => safeIdent(p.name),
+      };
+    }
+
+    // 4. Return-value block if this function returns
+    if (fn.returns) {
+      BLOCK_DEFS['returnFunc_' + fid] = {
+        cat: 'func', kind: 'statement',
+        funcId: fid,
+        parts: [{ t: 'return' }, { i: { name: 'value', valueType: fn.returnType, default: (fn.returnType === 'boolean' ? 'true' : '0') } }],
+        code: (b, gen) => `return ${gen.input(b, 'value')};`,
+      };
+    }
+  }
+}
+
+function makeBlock(defName, x, y) {
+  const def = BLOCK_DEFS[defName];
+  if (!def) throw new Error('Unknown block: ' + defName);
+  const b = {
+    id: uid(), def: defName, x, y,
+    fields: {}, inputs: {},
+    next: null, children: [],
+    parent: null, parentType: null, parentSlot: null,
+  };
+  for (const p of def.parts) {
+    if (p.f) b.fields[p.f.name] = p.f.default;
+    if (p.i) b.inputs[p.i.name] = null;
+  }
+  return b;
+}
+
+function addBlock(b, isTop) {
+  state.blocks.set(b.id, b);
+  if (isTop) state.topBlocks.add(b.id);
+}
+
+function removeBlock(id) {
+  const b = state.blocks.get(id);
+  if (!b) return;
+  detachBlock(id);
+  if (b.next) removeBlock(b.next);
+  for (const c of [...b.children]) removeBlock(c);
+  for (const [slot, child] of Object.entries(b.inputs)) {
+    if (child) removeBlock(child);
+  }
+  state.blocks.delete(id);
+  state.topBlocks.delete(id);
+}
+
+function detachBlock(id) {
+  const b = state.blocks.get(id);
+  if (!b) return;
+  if (!b.parent) { state.topBlocks.add(id); return; }
+  const parent = state.blocks.get(b.parent);
+  if (b.parentType === 'next') {
+    parent.next = null;
+  } else if (b.parentType === 'child') {
+    parent.children = parent.children.filter(c => c !== id);
+  } else if (b.parentType === 'input') {
+    parent.inputs[b.parentSlot] = null;
+  }
+  b.parent = null; b.parentType = null; b.parentSlot = null;
+  state.topBlocks.add(id);
+}
+
+// ----------------------------------------------------------
+// Layout - measurement
+// ----------------------------------------------------------
+const LAYOUT = {
+  rowH: 32,
+  reporterH: 26,
+  cornerR: 6,
+  notchOffset: 16,
+  notchWidth: 16,
+  notchHeight: 6,
+  mouthIndent: 16,
+  mouthMinH: 28,
+  footerH: 14,
+  pad: 10,
+  socketPadX: 4,
+  socketPadY: 3,
+  socketMinW: 30,
+};
+
+const SVG = { textWidth: s => s.length * 7.2 };
+
+// Compute layout for a block: returns
+//   { width, headerH, totalH (statement) or h (reporter), parts: [{x, w, ...}] }
+function measureBlock(b) {
+  const def = BLOCK_DEFS[b.def];
+  const isReporter = def.kind === 'reporter';
+  const isContainer = def.isContainer;
+
+  let cx = isReporter ? 10 : 14;
+  const partsLayout = [];
+  let maxFieldH = 22;
+
+  for (const p of def.parts) {
+    if (p.t) {
+      const w = SVG.textWidth(p.t);
+      partsLayout.push({ kind:'text', text:p.t, x:cx, w });
+      cx += w + 6;
+    } else if (p.f) {
+      const fieldDef = p.f;
+      let w = 50;
+      if (fieldDef.type === 'text') w = 90;
+      if (fieldDef.type === 'select') w = 80;
+      if (fieldDef.type === 'number') w = 50;
+      partsLayout.push({ kind:'field', field:fieldDef, x:cx, w });
+      cx += w + 6;
+    } else if (p.i) {
+      const slot = p.i.name;
+      const child = b.inputs[slot] ? state.blocks.get(b.inputs[slot]) : null;
+      let sw, sh;
+      if (child) {
+        const cm = measureBlock(child);
+        sw = cm.width; sh = cm.totalH;
+      } else {
+        // empty socket — sized for default text
+        sw = Math.max(LAYOUT.socketMinW, SVG.textWidth(String(p.i.default)) + 12);
+        sh = LAYOUT.reporterH - 4;
+      }
+      maxFieldH = Math.max(maxFieldH, sh);
+      partsLayout.push({ kind:'input', slot, x:cx, w:sw, h:sh });
+      cx += sw + 6;
+    }
+  }
+
+  const rightPad = isReporter ? 10 : 14;
+  let width = Math.max(isReporter ? 60 : 160, cx + rightPad);
+
+  if (isReporter) {
+    const h = Math.max(LAYOUT.reporterH, maxFieldH + 6);
+    return { width, headerH:h, totalH:h, partsLayout, isReporter:true };
+  }
+  const headerH = Math.max(LAYOUT.rowH, maxFieldH + 8);
+
+  if (isContainer) {
+    const mouthH = measureMouth(b);
+    return {
+      width, headerH, mouthH,
+      footerH: LAYOUT.footerH,
+      totalH: headerH + mouthH + LAYOUT.footerH,
+      partsLayout,
+    };
+  }
+  return { width, headerH, totalH: headerH, partsLayout };
+}
+
+function measureMouth(container) {
+  let h = 0;
+  for (const cid of container.children) {
+    h += measureStack(cid);
+  }
+  return Math.max(LAYOUT.mouthMinH, h + 4);
+}
+function measureStack(id) {
+  const b = state.blocks.get(id);
+  if (!b) return 0;
+  const m = measureBlock(b);
+  let h = m.totalH;
+  if (b.next) h += measureStack(b.next);
+  return h;
+}
+
+// ----------------------------------------------------------
+// Path generators
+// ----------------------------------------------------------
+function statementPath(b, m) {
+  const def = BLOCK_DEFS[b.def];
+  const r = LAYOUT.cornerR;
+  const w = m.width;
+  const nx = LAYOUT.notchOffset, nw = LAYOUT.notchWidth, nh = LAYOUT.notchHeight;
+  const headerH = m.headerH;
+  let p = '';
+  p += `M ${r},0`;
+  if (def.kind !== 'hat') {
+    p += ` L ${nx},0`;
+    p += ` L ${nx+4},${nh} L ${nx+nw-4},${nh} L ${nx+nw},0`;
+  }
+  p += ` L ${w-r},0`;
+  p += ` Q ${w},0 ${w},${r}`;
+
+  if (def.isContainer) {
+    p += ` L ${w},${headerH-r}`;
+    p += ` Q ${w},${headerH} ${w-r},${headerH}`;
+    const innerX = LAYOUT.mouthIndent;
+    p += ` L ${innerX + nw + nx},${headerH}`;
+    p += ` L ${innerX + nw + nx - 4},${headerH + nh}`;
+    p += ` L ${innerX + nx + 4},${headerH + nh}`;
+    p += ` L ${innerX + nx},${headerH}`;
+    p += ` L ${innerX + r},${headerH}`;
+    p += ` Q ${innerX},${headerH} ${innerX},${headerH+r}`;
+    p += ` L ${innerX},${headerH + m.mouthH - r}`;
+    p += ` Q ${innerX},${headerH + m.mouthH} ${innerX + r},${headerH + m.mouthH}`;
+    p += ` L ${w-r},${headerH + m.mouthH}`;
+    p += ` Q ${w},${headerH + m.mouthH} ${w},${headerH + m.mouthH + r}`;
+    p += ` L ${w},${m.totalH - r}`;
+    p += ` Q ${w},${m.totalH} ${w-r},${m.totalH}`;
+    p += ` L ${nx+nw},${m.totalH}`;
+    p += ` L ${nx+nw-4},${m.totalH + nh} L ${nx+4},${m.totalH + nh} L ${nx},${m.totalH}`;
+    p += ` L ${r},${m.totalH}`;
+    p += ` Q 0,${m.totalH} 0,${m.totalH - r}`;
+  } else {
+    p += ` L ${w},${m.totalH - r}`;
+    p += ` Q ${w},${m.totalH} ${w-r},${m.totalH}`;
+    p += ` L ${nx+nw},${m.totalH}`;
+    p += ` L ${nx+nw-4},${m.totalH + nh} L ${nx+4},${m.totalH + nh} L ${nx},${m.totalH}`;
+    p += ` L ${r},${m.totalH}`;
+    p += ` Q 0,${m.totalH} 0,${m.totalH - r}`;
+  }
+  p += ` L 0,${r}`;
+  p += ` Q 0,0 ${r},0 Z`;
+  return p;
+}
+
+// Reporter blocks are pill-shaped (number) or hexagon-ish (boolean)
+function reporterPath(b, m) {
+  const def = BLOCK_DEFS[b.def];
+  const w = m.width, h = m.totalH;
+  if (def.output === 'boolean') {
+    // hexagon
+    const inset = 8;
+    return `M ${inset},0 L ${w-inset},0 L ${w},${h/2} L ${w-inset},${h} L ${inset},${h} L 0,${h/2} Z`;
+  }
+  // pill
+  const r = h/2;
+  return `M ${r},0 L ${w-r},0 A ${r},${r} 0 0 1 ${w-r},${h} L ${r},${h} A ${r},${r} 0 0 1 ${r},0 Z`;
+}
+
+// ----------------------------------------------------------
+// Rendering
+// ----------------------------------------------------------
+const svgEl = document.getElementById('workspace-svg');
+const overlayEl = document.getElementById('drag-overlay');
+
+function blockColor(b) {
+  const cat = CATEGORIES.find(c => c.id === BLOCK_DEFS[b.def].cat);
+  return cat ? cat.colorHex : '#888';
+}
+function darken(hex, a=0.65) {
+  const r = parseInt(hex.slice(1,3),16);
+  const g = parseInt(hex.slice(3,5),16);
+  const bl = parseInt(hex.slice(5,7),16);
+  return `rgb(${(r*a)|0},${(g*a)|0},${(bl*a)|0})`;
+}
+
+function renderWorkspace() {
+  while (svgEl.firstChild) svgEl.removeChild(svgEl.firstChild);
+  while (overlayEl.firstChild) overlayEl.removeChild(overlayEl.firstChild);
+  const draggedId = state.dragging ? state.dragging.id : null;
+  for (const tid of state.topBlocks) {
+    const b = state.blocks.get(tid);
+    if (!b) continue;
+    if (tid === draggedId) {
+      const wsRect = svgEl.getBoundingClientRect();
+      renderStack(overlayEl, tid, b.x + wsRect.left, b.y + wsRect.top);
+    } else {
+      renderStack(svgEl, tid, b.x, b.y);
+    }
+  }
+}
+
+function renderStack(parent, id, x, y) {
+  let curId = id;
+  let cy = y;
+  while (curId) {
+    const b = state.blocks.get(curId);
+    if (!b) break;
+    b._renderX = x; b._renderY = cy;
+    const m = measureBlock(b);
+    renderBlock(parent, b, x, cy, m);
+    cy += m.totalH;
+    curId = b.next;
+  }
+}
+
+function renderBlock(parent, b, x, y, m) {
+  const def = BLOCK_DEFS[b.def];
+  const color = blockColor(b);
+  const dark = darken(color);
+  const g = document.createElementNS(SVG_NS, 'g');
+  g.setAttribute('transform', `translate(${x},${y})`);
+  g.dataset.blockId = b.id;
+  parent.appendChild(g);
+
+  const isReporter = def.kind === 'reporter';
+  const path = isReporter ? reporterPath(b, m) : statementPath(b, m);
+  const shape = document.createElementNS(SVG_NS, 'path');
+  shape.setAttribute('d', path);
+  shape.setAttribute('fill', color);
+  shape.setAttribute('stroke', dark);
+  shape.setAttribute('stroke-width', '1.5');
+  shape.classList.add('block-shape');
+  shape.dataset.blockId = b.id;
+  g.appendChild(shape);
+
+  // Render parts (label/field/input) inside the header
+  const headerH = m.headerH;
+  const cy = headerH / 2;
+  for (const part of m.partsLayout) {
+    if (part.kind === 'text') {
+      const t = document.createElementNS(SVG_NS, 'text');
+      t.setAttribute('x', part.x);
+      t.setAttribute('y', cy + 4);
+      t.setAttribute('class','bold');
+      t.textContent = part.text;
+      g.appendChild(t);
+    } else if (part.kind === 'field') {
+      renderFieldControl(g, b, part.field, part.x, cy - 11, part.w);
+    } else if (part.kind === 'input') {
+      const slot = part.slot;
+      const childId = b.inputs[slot];
+      if (childId) {
+        // Render the child block inline. Need to position vertically centered in the slot.
+        const child = state.blocks.get(childId);
+        const cm = measureBlock(child);
+        const yy = cy - cm.totalH/2;
+        child._renderX = x + part.x;
+        child._renderY = y + yy;
+        renderBlock(g, child, part.x, yy, cm);
+      } else {
+        // Empty socket: render a depressed hole with default value visible
+        renderEmptySocket(g, b, slot, part);
+      }
+    }
+  }
+
+  // Container mouth
+  if (def.isContainer) {
+    const sideBar = document.createElementNS(SVG_NS, 'rect');
+    sideBar.setAttribute('x', 0);
+    sideBar.setAttribute('y', m.headerH);
+    sideBar.setAttribute('width', LAYOUT.mouthIndent);
+    sideBar.setAttribute('height', m.mouthH);
+    sideBar.setAttribute('fill', dark);
+    g.insertBefore(sideBar, shape.nextSibling);
+
+    let cyy = m.headerH + 2;
+    for (const cid of b.children) {
+      renderStack(g, cid, LAYOUT.mouthIndent, cyy);
+      cyy += measureStack(cid);
+    }
+  }
+}
+
+function renderEmptySocket(parent, b, slot, part) {
+  const def = BLOCK_DEFS[b.def];
+  const partDef = def.parts.find(p => p.i && p.i.name === slot).i;
+  const isBool = partDef.valueType === 'boolean';
+  const w = part.w, h = part.h;
+  const yy = part.x ? (parent._headerY || 0) : 0; // unused
+  const cy = (BLOCK_DEFS[b.def].kind === 'reporter' ? measureBlock(b).headerH/2 : measureBlock(b).headerH/2);
+  const y = cy - h/2;
+
+  const socket = document.createElementNS(SVG_NS, 'path');
+  let d;
+  if (isBool) {
+    const inset = 6;
+    d = `M ${part.x+inset},${y} L ${part.x+w-inset},${y} L ${part.x+w},${y+h/2} L ${part.x+w-inset},${y+h} L ${part.x+inset},${y+h} L ${part.x},${y+h/2} Z`;
+  } else {
+    const r = h/2;
+    d = `M ${part.x+r},${y} L ${part.x+w-r},${y} A ${r},${r} 0 0 1 ${part.x+w-r},${y+h} L ${part.x+r},${y+h} A ${r},${r} 0 0 1 ${part.x+r},${y} Z`;
+  }
+  socket.setAttribute('d', d);
+  socket.setAttribute('fill', 'rgba(0,0,0,0.28)');
+  socket.setAttribute('stroke', 'rgba(0,0,0,0.4)');
+  socket.dataset.socket = b.id + ':' + slot;
+  parent.appendChild(socket);
+
+  const t = document.createElementNS(SVG_NS, 'text');
+  t.setAttribute('x', part.x + w/2);
+  t.setAttribute('y', y + h/2 + 4);
+  t.setAttribute('text-anchor', 'middle');
+  t.style.fontSize = '11px';
+  t.style.fill = 'rgba(255,255,255,0.55)';
+  t.textContent = partDef.default;
+  parent.appendChild(t);
+}
+
+function renderFieldControl(parent, b, fieldDef, x, y, width) {
+  const fo = document.createElementNS(SVG_NS, 'foreignObject');
+  fo.setAttribute('x', x);
+  fo.setAttribute('y', y);
+  fo.setAttribute('width', width);
+  fo.setAttribute('height', 24);
+  fo.style.overflow = 'visible';
+  let el;
+  if (fieldDef.type === 'select') {
+    el = document.createElement('select');
+    el.className = 'field-select';
+    for (const opt of fieldDef.options) {
+      const o = document.createElement('option');
+      o.value = opt; o.textContent = opt;
+      if (opt === b.fields[fieldDef.name]) o.selected = true;
+      el.appendChild(o);
+    }
+    el.style.width = (width-2) + 'px';
+    el.addEventListener('change', () => {
+      b.fields[fieldDef.name] = el.value;
+      renderWorkspace();
+      regenerate();
+      saveState();
+    });
+  } else {
+    el = document.createElement('input');
+    el.className = 'field-input' + (fieldDef.type === 'text' ? ' wide' : '');
+    el.type = fieldDef.type === 'number' ? 'number' : 'text';
+    el.style.width = (width-6) + 'px';
+    el.value = b.fields[fieldDef.name];
+    el.addEventListener('input', () => {
+      b.fields[fieldDef.name] = el.value;
+      renderWorkspace();
+      regenerate();
+    });
+    el.addEventListener('blur', () => saveState());
+  }
+  el.addEventListener('mousedown', e => e.stopPropagation());
+  el.addEventListener('pointerdown', e => e.stopPropagation());
+  fo.appendChild(el);
+  parent.appendChild(fo);
+}
+
+// ----------------------------------------------------------
+// Palette
+// ----------------------------------------------------------
+function renderPalette() {
+  const pal = document.getElementById('palette');
+  pal.innerHTML = '';
+  for (const cat of CATEGORIES) {
+    const h = document.createElement('div');
+    h.className = 'cat-header';
+    h.textContent = cat.name;
+    h.style.color = cat.colorHex;
+    pal.appendChild(h);
+
+    // Special handling for the "func" category: a Make-a-Function button + per-function blocks
+    if (cat.id === 'func') {
+      const makeBtn = document.createElement('button');
+      makeBtn.className = 'make-function-btn';
+      makeBtn.textContent = '+ Make a function...';
+      makeBtn.addEventListener('click', () => openFunctionModal(null));
+      pal.appendChild(makeBtn);
+    }
+
+    for (const [name, def] of Object.entries(BLOCK_DEFS)) {
+      if (def.cat !== cat.id) continue;
+      const wrap = document.createElement('div');
+      wrap.className = 'palette-block';
+      wrap.dataset.def = name;
+
+      // For function definition hats, add an Edit button overlay
+      if (name.startsWith('defineFunc_')) {
+        wrap.style.position = 'relative';
+      }
+
+      const tmp = makeBlock(name, 0, 0);
+      const m = measureBlock(tmp);
+      const previewW = Math.min(195, Math.max(60, m.width * 0.85));
+      const previewH = (m.totalH + 6) * (previewW / m.width);
+      const s = document.createElementNS(SVG_NS, 'svg');
+      s.setAttribute('width', previewW);
+      s.setAttribute('height', previewH);
+      s.setAttribute('viewBox', `0 0 ${m.width} ${m.totalH + 6}`);
+      const g = document.createElementNS(SVG_NS, 'g');
+      s.appendChild(g);
+
+      const path = def.kind === 'reporter' ? reporterPath(tmp, m) : statementPath(tmp, m);
+      const shape = document.createElementNS(SVG_NS, 'path');
+      shape.setAttribute('d', path);
+      shape.setAttribute('fill', blockColor(tmp));
+      shape.setAttribute('stroke', darken(blockColor(tmp)));
+      shape.setAttribute('stroke-width', '1.5');
+      g.appendChild(shape);
+
+      // simple text label of parts joined
+      const labelParts = def.parts.map(p => {
+        if (p.t) return p.t;
+        if (p.f) return '['+p.f.default+']';
+        if (p.i) return '◇';
+      }).join(' ');
+      const t = document.createElementNS(SVG_NS, 'text');
+      t.setAttribute('x', 14);
+      t.setAttribute('y', m.headerH/2 + 4);
+      t.setAttribute('class','bold');
+      t.textContent = labelParts;
+      g.appendChild(t);
+
+      wrap.appendChild(s);
+      wrap.addEventListener('pointerdown', e => startPaletteDrag(e, name));
+
+      // Edit button for function definition hat blocks
+      if (name.startsWith('defineFunc_')) {
+        const editBtn = document.createElement('button');
+        editBtn.className = 'func-edit-btn';
+        editBtn.textContent = 'edit';
+        editBtn.style.position = 'absolute';
+        editBtn.style.top = '4px';
+        editBtn.style.right = '4px';
+        editBtn.addEventListener('pointerdown', e => e.stopPropagation());
+        editBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          openFunctionModal(def.funcId);
+        });
+        wrap.appendChild(editBtn);
+      }
+
+      pal.appendChild(wrap);
+      state.blocks.delete(tmp.id);
+    }
+  }
+}
+
+// ----------------------------------------------------------
+// Function creation modal
+// ----------------------------------------------------------
+let editingFuncId = null; // null = creating new
+
+function openFunctionModal(fid) {
+  editingFuncId = fid;
+  const modal = document.getElementById('fn-modal');
+  const titleEl = document.getElementById('fn-modal-title');
+  const nameEl = document.getElementById('fn-name');
+  const returnsEl = document.getElementById('fn-returns');
+  const returnTypeEl = document.getElementById('fn-return-type');
+  const saveBtn = document.getElementById('fn-save');
+  const deleteBtn = document.getElementById('fn-delete');
+
+  if (fid) {
+    const fn = state.functions.get(fid);
+    titleEl.textContent = 'Edit function';
+    nameEl.value = fn.name;
+    returnsEl.checked = fn.returns;
+    returnTypeEl.value = fn.returnType || 'number';
+    document.getElementById('fn-return-row').classList.toggle('show', fn.returns);
+    saveBtn.textContent = 'Save changes';
+    deleteBtn.style.display = 'inline-block';
+    renderParamsList(fn.params);
+  } else {
+    titleEl.textContent = 'Make a function';
+    nameEl.value = '';
+    returnsEl.checked = false;
+    returnTypeEl.value = 'number';
+    document.getElementById('fn-return-row').classList.remove('show');
+    saveBtn.textContent = 'Create';
+    deleteBtn.style.display = 'none';
+    renderParamsList([]);
+  }
+  modal.classList.add('show');
+  setTimeout(() => nameEl.focus(), 50);
+}
+
+function closeFunctionModal() {
+  document.getElementById('fn-modal').classList.remove('show');
+  editingFuncId = null;
+}
+
+function renderParamsList(params) {
+  const c = document.getElementById('fn-params');
+  c.innerHTML = '';
+  for (const p of params) addParamRow(p.name, p.type);
+}
+
+function addParamRow(name = '', type = 'number') {
+  const c = document.getElementById('fn-params');
+  const row = document.createElement('div');
+  row.className = 'param-row';
+  const nameI = document.createElement('input');
+  nameI.type = 'text';
+  nameI.placeholder = 'parameter name';
+  nameI.value = name;
+  const typeS = document.createElement('select');
+  for (const t of ['number', 'boolean']) {
+    const o = document.createElement('option');
+    o.value = t; o.textContent = t;
+    if (t === type) o.selected = true;
+    typeS.appendChild(o);
+  }
+  const rm = document.createElement('button');
+  rm.className = 'remove';
+  rm.textContent = '✕';
+  rm.addEventListener('click', () => row.remove());
+  row.appendChild(nameI);
+  row.appendChild(typeS);
+  row.appendChild(rm);
+  c.appendChild(row);
+}
+
+function readParamsFromModal() {
+  const rows = document.querySelectorAll('#fn-params .param-row');
+  const params = [];
+  const seen = new Set();
+  for (const r of rows) {
+    const inputs = r.querySelectorAll('input, select');
+    const name = inputs[0].value.trim();
+    const type = inputs[1].value;
+    if (!name) continue;
+    if (seen.has(name)) continue; // skip duplicates
+    seen.add(name);
+    params.push({ name, type });
+  }
+  return params;
+}
+
+function saveFunctionFromModal() {
+  const name = document.getElementById('fn-name').value.trim();
+  if (!name) { alert('Function needs a name'); return; }
+  const params = readParamsFromModal();
+  const returns = document.getElementById('fn-returns').checked;
+  const returnType = document.getElementById('fn-return-type').value;
+
+  if (editingFuncId) {
+    const fn = state.functions.get(editingFuncId);
+    fn.name = name;
+    fn.params = params;
+    fn.returns = returns;
+    fn.returnType = returnType;
+    // Clean up any blocks that reference removed parameters
+    pruneParamReferences(editingFuncId, params.map(p => p.name));
+  } else {
+    const fid = funcId();
+    state.functions.set(fid, { id: fid, name, params, returns, returnType });
+  }
+  rebuildFunctionDefs();
+  renderPalette();
+  renderWorkspace();
+  regenerate();
+  saveState();
+  closeFunctionModal();
+}
+
+function pruneParamReferences(fid, keepNames) {
+  // Remove any paramGet_<fid>_X blocks where X is no longer a parameter
+  const toRemove = [];
+  for (const [bid, b] of state.blocks) {
+    if (b.def.startsWith('paramGet_' + fid + '_')) {
+      const paramName = b.def.substring(('paramGet_' + fid + '_').length);
+      if (!keepNames.includes(paramName)) toRemove.push(bid);
+    }
+  }
+  for (const bid of toRemove) removeBlock(bid);
+}
+
+function deleteFunction() {
+  if (!editingFuncId) return;
+  const fn = state.functions.get(editingFuncId);
+  if (!confirm(`Delete function "${fn.name}"? All its blocks (definition, calls, parameter references) will be removed.`)) return;
+  // Remove all blocks referencing this function
+  const toRemove = [];
+  for (const [bid, b] of state.blocks) {
+    if (b.def === 'defineFunc_' + editingFuncId
+        || b.def === 'callFunc_' + editingFuncId
+        || b.def === 'returnFunc_' + editingFuncId
+        || b.def.startsWith('paramGet_' + editingFuncId + '_')) {
+      toRemove.push(bid);
+    }
+  }
+  for (const bid of toRemove) removeBlock(bid);
+  state.functions.delete(editingFuncId);
+  rebuildFunctionDefs();
+  renderPalette();
+  renderWorkspace();
+  regenerate();
+  saveState();
+  closeFunctionModal();
+}
+
+// Wire up modal events
+document.getElementById('fn-add-param').addEventListener('click', () => addParamRow());
+document.getElementById('fn-returns').addEventListener('change', e => {
+  document.getElementById('fn-return-row').classList.toggle('show', e.target.checked);
+});
+document.getElementById('fn-cancel').addEventListener('click', closeFunctionModal);
+document.getElementById('fn-save').addEventListener('click', saveFunctionFromModal);
+document.getElementById('fn-delete').addEventListener('click', deleteFunction);
+document.getElementById('fn-modal').addEventListener('click', e => {
+  if (e.target.id === 'fn-modal') closeFunctionModal();
+});
+
+// ----------------------------------------------------------
+// Drag & Drop
+// ----------------------------------------------------------
+function startPaletteDrag(e, defName) {
+  e.preventDefault();
+  const wsRect = svgEl.getBoundingClientRect();
+  const tmp = makeBlock(defName, 0, 0);
+  const x = e.clientX - wsRect.left - 20;
+  const y = e.clientY - wsRect.top - 12;
+  tmp.x = x; tmp.y = y;
+  addBlock(tmp, true);
+  state.dragging = { id: tmp.id, offsetX: 20, offsetY: 12 };
+  renderWorkspace();
+  regenerate();
+  window.addEventListener('pointermove', onPointerMove);
+  window.addEventListener('pointerup', onPointerUp);
+}
+
+svgEl.addEventListener('pointerdown', e => {
+  // walk up to find the nearest element with a blockId we own
+  let target = e.target;
+  let blockId = null;
+  while (target && target !== svgEl) {
+    if (target.dataset && target.dataset.blockId) { blockId = target.dataset.blockId; break; }
+    target = target.parentNode;
+  }
+  if (!blockId) return;
+  const b = state.blocks.get(blockId);
+  if (!b) return;
+
+  // Compute its world position before detach
+  const worldX = b._renderX || b.x;
+  const worldY = b._renderY || b.y;
+  detachBlock(blockId);
+  b.x = worldX; b.y = worldY;
+
+  const wsRect = svgEl.getBoundingClientRect();
+  state.dragging = {
+    id: blockId,
+    offsetX: e.clientX - wsRect.left - b.x,
+    offsetY: e.clientY - wsRect.top - b.y,
+  };
+  renderWorkspace();
+  regenerate();
+  window.addEventListener('pointermove', onPointerMove);
+  window.addEventListener('pointerup', onPointerUp);
+});
+
+function onPointerMove(e) {
+  if (!state.dragging) return;
+  const b = state.blocks.get(state.dragging.id);
+  if (!b) return;
+  const wsRect = svgEl.getBoundingClientRect();
+  b.x = e.clientX - wsRect.left - state.dragging.offsetX;
+  b.y = e.clientY - wsRect.top - state.dragging.offsetY;
+
+  const palette = document.getElementById('palette');
+  const pRect = palette.getBoundingClientRect();
+  const overPal = e.clientX >= pRect.left && e.clientX <= pRect.right &&
+                  e.clientY >= pRect.top && e.clientY <= pRect.bottom;
+  palette.classList.toggle('delete-zone', overPal);
+
+  renderWorkspace();
+  highlightSnap(b);
+}
+
+function onPointerUp(e) {
+  if (!state.dragging) return;
+  const b = state.blocks.get(state.dragging.id);
+
+  const palette = document.getElementById('palette');
+  const pRect = palette.getBoundingClientRect();
+  if (e.clientX >= pRect.left && e.clientX <= pRect.right &&
+      e.clientY >= pRect.top && e.clientY <= pRect.bottom) {
+    removeBlock(b.id);
+    palette.classList.remove('delete-zone');
+    state.dragging = null;
+    cleanupListeners();
+    renderWorkspace();
+    regenerate();
+    saveState();
+    return;
+  }
+
+  const target = findSnapTarget(b);
+  if (target) snapTo(b, target);
+
+  state.dragging = null;
+  cleanupListeners();
+  renderWorkspace();
+  regenerate();
+  saveState();
+}
+
+function cleanupListeners() {
+  window.removeEventListener('pointermove', onPointerMove);
+  window.removeEventListener('pointerup', onPointerUp);
+  document.getElementById('palette').classList.remove('delete-zone');
+}
+
+// ----------------------------------------------------------
+// Snap logic
+// ----------------------------------------------------------
+function findSnapTarget(dragged) {
+  const def = BLOCK_DEFS[dragged.def];
+  if (def.kind === 'hat') return null;
+  const isReporter = def.kind === 'reporter';
+
+  const SNAP = 22;
+  const dragX = dragged.x;
+  const dragY = dragged.y;
+  let best = null;
+  let bestDist = SNAP;
+  const excluded = collectSubtree(dragged.id);
+
+  for (const [id, b] of state.blocks) {
+    if (excluded.has(id)) continue;
+    const bm = measureBlock(b);
+    const bx = b._renderX, by = b._renderY;
+    if (bx === undefined) continue;
+
+    if (!isReporter) {
+      // Snap as next (bottom of another statement block)
+      if (BLOCK_DEFS[b.def].kind !== 'reporter' && !b.next) {
+        const spx = bx + LAYOUT.notchOffset;
+        const spy = by + bm.totalH;
+        const d = Math.hypot(dragX + LAYOUT.notchOffset - spx, dragY - spy);
+        if (d < bestDist) { best = { type:'next', targetId:id, x:bx, y:spy }; bestDist = d; }
+      }
+      // Snap as first child of container
+      if (BLOCK_DEFS[b.def].isContainer && b.children.length === 0) {
+        const spx = bx + LAYOUT.mouthIndent + LAYOUT.notchOffset;
+        const spy = by + bm.headerH;
+        const d = Math.hypot(dragX + LAYOUT.notchOffset - spx, dragY - spy);
+        if (d < bestDist) {
+          best = { type:'child', targetId:id, x:bx + LAYOUT.mouthIndent, y:spy };
+          bestDist = d;
+        }
+      }
+    } else {
+      // Reporter: snap into any empty input socket whose valueType matches
+      for (const part of bm.partsLayout) {
+        if (part.kind !== 'input') continue;
+        if (b.inputs[part.slot]) continue;
+        const slotDef = BLOCK_DEFS[b.def].parts.find(p => p.i && p.i.name === part.slot).i;
+        // Allow plugging anything into 'any'; number reporters into number sockets; boolean into boolean.
+        if (slotDef.valueType !== 'any' && slotDef.valueType !== def.output) continue;
+        // The socket's center in world coords:
+        const spx = bx + part.x + part.w / 2;
+        const spy = by + bm.headerH / 2;
+        // Drag block's center
+        const dm = measureBlock(dragged);
+        const dcx = dragX + dm.width / 2;
+        const dcy = dragY + dm.totalH / 2;
+        const d = Math.hypot(dcx - spx, dcy - spy);
+        if (d < bestDist) {
+          best = { type:'input', targetId:id, slot:part.slot, x:bx + part.x, y:by + bm.headerH/2 - part.h/2, w:part.w, h:part.h };
+          bestDist = d;
+        }
+      }
+    }
+  }
+  return best;
+}
+
+function collectSubtree(id) {
+  const set = new Set();
+  function walk(i) {
+    if (!i || set.has(i)) return;
+    set.add(i);
+    const b = state.blocks.get(i);
+    if (!b) return;
+    if (b.next) walk(b.next);
+    for (const c of b.children) walk(c);
+    for (const [s, c] of Object.entries(b.inputs)) walk(c);
+  }
+  walk(id);
+  return set;
+}
+
+function highlightSnap(dragged) {
+  for (const old of svgEl.querySelectorAll('.snap-indicator,.socket-highlight')) old.remove();
+  const target = findSnapTarget(dragged);
+  if (!target) return;
+  if (target.type === 'input') {
+    const r = document.createElementNS(SVG_NS, 'rect');
+    r.setAttribute('x', target.x);
+    r.setAttribute('y', target.y);
+    r.setAttribute('width', target.w);
+    r.setAttribute('height', target.h);
+    r.setAttribute('rx', target.h/2);
+    r.classList.add('socket-highlight');
+    svgEl.appendChild(r);
+  } else {
+    const c = document.createElementNS(SVG_NS, 'circle');
+    c.setAttribute('cx', target.x + LAYOUT.notchOffset + LAYOUT.notchWidth/2);
+    c.setAttribute('cy', target.y + LAYOUT.notchHeight);
+    c.setAttribute('r', 5);
+    c.classList.add('snap-indicator');
+    svgEl.appendChild(c);
+  }
+}
+
+function snapTo(b, target) {
+  state.topBlocks.delete(b.id);
+  const parent = state.blocks.get(target.targetId);
+  if (target.type === 'next') {
+    parent.next = b.id;
+    b.parent = target.targetId; b.parentType = 'next';
+  } else if (target.type === 'child') {
+    parent.children.push(b.id);
+    b.parent = target.targetId; b.parentType = 'child';
+  } else if (target.type === 'input') {
+    parent.inputs[target.slot] = b.id;
+    b.parent = target.targetId; b.parentType = 'input'; b.parentSlot = target.slot;
+  }
+}
+
+// ----------------------------------------------------------
+// Code generation
+// ----------------------------------------------------------
+function generateCode() {
+  const declaredVars = new Set();
+  const gen = {
+    indent: '',
+    declareInt: (n) => { if (n && /^[a-zA-Z_]\w*$/.test(n)) declaredVars.add(n); },
+    input: (b, slot) => {
+      const childId = b.inputs[slot];
+      if (childId) {
+        const child = state.blocks.get(childId);
+        if (!child) return '0';
+        return BLOCK_DEFS[child.def].code(child, gen);
+      }
+      // Empty socket: use literal default
+      const part = BLOCK_DEFS[b.def].parts.find(p => p.i && p.i.name === slot);
+      return part ? String(part.i.default) : '0';
+    },
+    children: (b, indent) => {
+      const save = gen.indent; gen.indent = indent;
+      let out = '';
+      for (const cid of b.children) out += renderStmt(cid, indent);
+      gen.indent = save;
+      return out;
+    },
+  };
+
+  function renderStmt(id, indent) {
+    const b = state.blocks.get(id);
+    if (!b) return '';
+    const save = gen.indent; gen.indent = indent;
+    const line = BLOCK_DEFS[b.def].code(b, gen);
+    gen.indent = save;
+    let out = indent + line + '\n';
+    if (b.next) out += renderStmt(b.next, indent);
+    return out;
+  }
+
+  let setupBlock = null, loopBlock = null;
+  const funcDefBlocks = []; // top-level defineFunc_* hats
+  for (const [id, b] of state.blocks) {
+    if (!state.topBlocks.has(id)) continue;
+    if (b.def === 'setup') setupBlock = b;
+    else if (b.def === 'loop') loopBlock = b;
+    else if (b.def.startsWith('defineFunc_')) funcDefBlocks.push(b);
+  }
+  let setupCode = '', loopCode = '';
+  if (setupBlock) setupCode = BLOCK_DEFS.setup.code(setupBlock, gen);
+  if (loopBlock) loopCode = BLOCK_DEFS.loop.code(loopBlock, gen);
+
+  // Generate user functions
+  const userFuncCode = [];
+  const forwardDecls = [];
+  for (const fb of funcDefBlocks) {
+    const def = BLOCK_DEFS[fb.def];
+    if (!def) continue;
+    userFuncCode.push(def.code(fb, gen));
+    // Build forward declaration
+    const fn = state.functions.get(def.funcId);
+    if (fn) {
+      const retType = fn.returns ? (fn.returnType === 'boolean' ? 'bool' : 'int') : 'void';
+      const args = fn.params.map(p => (p.type === 'boolean' ? 'bool' : 'int') + ' ' + safeIdent(p.name)).join(', ');
+      forwardDecls.push(`${retType} ${safeIdent(fn.name)}(${args});`);
+    }
+  }
+
+  let out = '// Generated by BlockDuino\n';
+  if (declaredVars.size) {
+    out += '\n';
+    for (const v of declaredVars) out += `int ${v} = 0;\n`;
+  }
+  if (forwardDecls.length) {
+    out += '\n// Function prototypes\n';
+    for (const fd of forwardDecls) out += fd + '\n';
+  }
+  out += '\n';
+  out += setupCode || 'void setup() {\n  // your setup code here\n}\n';
+  out += '\n';
+  out += loopCode || 'void loop() {\n  // your loop code here\n}\n';
+  if (userFuncCode.length) {
+    out += '\n';
+    out += userFuncCode.join('\n');
+  }
+  return out;
+}
+
+function regenerate() {
+  const code = generateCode();
+  const el = document.getElementById('code-output');
+  el.textContent = code;
+  let html = el.textContent.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  html = html.replace(/(\/\/[^\n]*)/g,'<span class="code-comment">$1</span>');
+  html = html.replace(/("[^"]*")/g,'<span class="code-str">$1</span>');
+  html = html.replace(/\b(void|int|long|float|if|else|while|for|return|true|false|HIGH|LOW|OUTPUT|INPUT|INPUT_PULLUP)\b/g,'<span class="code-kw">$1</span>');
+  html = html.replace(/\b(setup|loop|pinMode|digitalWrite|digitalRead|analogWrite|analogRead|delay|Serial|random)\b/g,'<span class="code-fn">$1</span>');
+  html = html.replace(/\b(\d+)\b/g,'<span class="code-num">$1</span>');
+  el.innerHTML = html;
+  document.getElementById('f-status').textContent =
+    `${state.blocks.size} block${state.blocks.size===1?'':'s'} · ${code.split('\n').length} lines`;
+}
+
+// ----------------------------------------------------------
+// Save / load
+// ----------------------------------------------------------
+function serialize() {
+  const blocks = {};
+  for (const [id, b] of state.blocks) {
+    blocks[id] = {
+      def: b.def, x: b.x, y: b.y,
+      fields: {...b.fields}, inputs: {...b.inputs},
+      next: b.next, children: [...b.children],
+      parent: b.parent, parentType: b.parentType, parentSlot: b.parentSlot,
+    };
+  }
+  const functions = {};
+  for (const [fid, fn] of state.functions) functions[fid] = {...fn, params: [...fn.params]};
+  return { blocks, topBlocks: [...state.topBlocks], nextId: state.nextId, functions, nextFuncId: state.nextFuncId };
+}
+function deserialize(data) {
+  state.blocks = new Map();
+  state.topBlocks = new Set();
+  state.functions = new Map();
+  for (const [id, b] of Object.entries(data.blocks)) {
+    state.blocks.set(id, { id, ...b });
+  }
+  state.topBlocks = new Set(data.topBlocks);
+  state.nextId = data.nextId;
+  if (data.functions) {
+    for (const [fid, fn] of Object.entries(data.functions)) {
+      state.functions.set(fid, fn);
+    }
+    state.nextFuncId = data.nextFuncId || 1;
+  }
+  rebuildFunctionDefs();
+}
+function saveState() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(serialize())); } catch(e) {}
+}
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) { toast('No save found'); return; }
+    deserialize(JSON.parse(raw));
+    renderPalette();
+    renderWorkspace(); regenerate();
+    toast('Loaded!');
+  } catch(e) { toast('Load failed'); }
+}
+function clearAll() {
+  if (!confirm('Clear all blocks and functions?')) return;
+  state.blocks = new Map();
+  state.topBlocks = new Set();
+  state.functions = new Map();
+  state.nextId = 1;
+  state.nextFuncId = 1;
+  rebuildFunctionDefs();
+  // Add starters back
+  const s = makeBlock('setup', 60, 40); addBlock(s, true);
+  const l = makeBlock('loop', 60, 180); addBlock(l, true);
+  renderPalette();
+  renderWorkspace(); regenerate(); saveState();
+}
+function loadExample() {
+  state.blocks = new Map();
+  state.topBlocks = new Set();
+  state.nextId = 1;
+
+  // Blink with proper sockets: delay uses mathNumber, etc.
+  const setup = makeBlock('setup', 60, 40); addBlock(setup, true);
+  const pm = makeBlock('pinMode'); pm.fields.pin = 13; pm.fields.mode = 'OUTPUT';
+  addBlock(pm, false);
+  setup.children.push(pm.id); pm.parent = setup.id; pm.parentType = 'child';
+
+  const loop = makeBlock('loop', 60, 200); addBlock(loop, true);
+  const dw1 = makeBlock('digitalWrite'); dw1.fields.pin = 13; dw1.fields.value = 'HIGH'; addBlock(dw1, false);
+  const d1 = makeBlock('delay'); addBlock(d1, false);
+  const num1 = makeBlock('mathNumber'); num1.fields.n = 500; addBlock(num1, false);
+  d1.inputs.ms = num1.id; num1.parent = d1.id; num1.parentType = 'input'; num1.parentSlot = 'ms';
+
+  const dw2 = makeBlock('digitalWrite'); dw2.fields.pin = 13; dw2.fields.value = 'LOW'; addBlock(dw2, false);
+  const d2 = makeBlock('delay'); addBlock(d2, false);
+  const num2 = makeBlock('mathNumber'); num2.fields.n = 500; addBlock(num2, false);
+  d2.inputs.ms = num2.id; num2.parent = d2.id; num2.parentType = 'input'; num2.parentSlot = 'ms';
+
+  loop.children.push(dw1.id); dw1.parent = loop.id; dw1.parentType = 'child';
+  dw1.next = d1.id;   d1.parent = dw1.id; d1.parentType = 'next';
+  d1.next  = dw2.id; dw2.parent = d1.id;  dw2.parentType = 'next';
+  dw2.next = d2.id;   d2.parent = dw2.id; d2.parentType = 'next';
+
+  renderWorkspace(); regenerate(); saveState();
+  toast('Loaded blink example');
+}
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(()=>t.classList.remove('show'), 1500);
+}
+document.getElementById('b-clear').addEventListener('click', clearAll);
+document.getElementById('b-save').addEventListener('click', ()=>{ saveState(); toast('Saved!'); });
+document.getElementById('b-load').addEventListener('click', loadState);
+document.getElementById('b-example').addEventListener('click', loadExample);
+document.getElementById('b-copy').addEventListener('click', ()=> {
+  navigator.clipboard.writeText(document.getElementById('code-output').textContent).then(()=>toast('Copied!'));
+});
+
+// ----------------------------------------------------------
+// Resizable side panels
+// ----------------------------------------------------------
+const PANEL_KEY = 'blockduino_panels_v06';
+
+function applyPanelSizes(left, right) {
+  document.body.style.gridTemplateColumns = `${left}px 5px 1fr 5px ${right}px`;
+}
+
+function loadPanelSizes() {
+  try {
+    const raw = localStorage.getItem(PANEL_KEY);
+    if (raw) {
+      const { left, right } = JSON.parse(raw);
+      if (left && right) applyPanelSizes(left, right);
+    }
+  } catch(e) {}
+}
+loadPanelSizes();
+
+function savePanelSizes(left, right) {
+  try { localStorage.setItem(PANEL_KEY, JSON.stringify({ left, right })); } catch(e) {}
+}
+
+function setupResizer(el, side) {
+  el.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    el.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    const startX = e.clientX;
+    const cols = getComputedStyle(document.body).gridTemplateColumns.split(' ');
+    const startLeft = parseFloat(cols[0]);
+    const startRight = parseFloat(cols[4]);
+    const viewportW = window.innerWidth;
+
+    function onMove(ev) {
+      const dx = ev.clientX - startX;
+      let left = startLeft;
+      let right = startRight;
+      if (side === 'left') left = startLeft + dx;
+      else right = startRight - dx;
+      // Clamp within reasonable bounds
+      left = Math.max(140, Math.min(500, left));
+      right = Math.max(220, Math.min(800, right));
+      // Make sure middle workspace has at least 200px
+      if (viewportW - left - right - 10 < 200) return;
+      applyPanelSizes(left, right);
+      savePanelSizes(left, right);
+      // Re-render workspace so dragged-block coords stay correct
+      renderWorkspace();
+    }
+    function onUp() {
+      el.classList.remove('dragging');
+      document.body.style.cursor = '';
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    }
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  });
+}
+setupResizer(document.getElementById('resizer-left'), 'left');
+setupResizer(document.getElementById('resizer-right'), 'right');
+try {
+  if (localStorage.getItem(STORE_KEY)) {
+    deserialize(JSON.parse(localStorage.getItem(STORE_KEY)));
+  }
+} catch(e) {}
+rebuildFunctionDefs();
+renderPalette();
+if (state.blocks.size === 0) {
+  const s = makeBlock('setup', 60, 40); addBlock(s, true);
+  const l = makeBlock('loop', 60, 200); addBlock(l, true);
+}
+renderWorkspace();
+regenerate();
+
+// ============================================================
+// Download as .ino file
+// ============================================================
+function safeSketchName(s) {
+  // Arduino sketch names must start with letter/underscore, can contain letters/digits/underscores
+  let name = (s || '').trim().replace(/[^a-zA-Z0-9_]/g, '_');
+  if (!name) name = 'sketch';
+  if (/^\d/.test(name)) name = '_' + name;
+  return name;
+}
+
+function openDownloadModal() {
+  const modal = document.getElementById('dl-modal');
+  modal.classList.add('show');
+  const inp = document.getElementById('dl-name');
+  setTimeout(() => { inp.focus(); inp.select(); }, 50);
+}
+function closeDownloadModal() {
+  document.getElementById('dl-modal').classList.remove('show');
+}
+
+function downloadSketch() {
+  const rawName = document.getElementById('dl-name').value;
+  const name = safeSketchName(rawName);
+  const code = generateCode();
+
+  // Build the blob and trigger a download
+  const blob = new Blob([code], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name + '.ino';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+  closeDownloadModal();
+  toast('Downloaded ' + name + '.ino');
+}
+
+document.getElementById('b-download').addEventListener('click', openDownloadModal);
+document.getElementById('dl-cancel').addEventListener('click', closeDownloadModal);
+document.getElementById('dl-go').addEventListener('click', downloadSketch);
+document.getElementById('dl-modal').addEventListener('click', e => {
+  if (e.target.id === 'dl-modal') closeDownloadModal();
+});
+document.getElementById('dl-name').addEventListener('keydown', e => {
+  if (e.key === 'Enter') downloadSketch();
+});
+
+// ============================================================
+// Serial Monitor (Web Serial API)
+// ============================================================
+const serial = {
+  port: null,
+  reader: null,
+  writer: null,
+  keepReading: false,
+  paused: false,
+  buffer: '',
+  textDecoder: null,
+};
+
+function serialIsSupported() {
+  return 'serial' in navigator;
+}
+
+function setSerialStatus(text, cls) {
+  const el = document.getElementById('serial-status');
+  el.textContent = text;
+  el.className = 'serial-status' + (cls ? ' ' + cls : '');
+}
+
+function appendSerialLine(msg, kind = '') {
+  if (serial.paused && kind === '') return; // pause only suppresses incoming lines
+  const out = document.getElementById('serial-output');
+  const showTs = document.getElementById('serial-timestamps').checked;
+  const line = document.createElement('div');
+  line.className = 'serial-line' + (kind ? ' ' + kind : '');
+  if (showTs) {
+    const ts = document.createElement('span');
+    ts.className = 'ts';
+    const d = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    ts.textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3,'0')}`;
+    line.appendChild(ts);
+  }
+  const msgEl = document.createElement('span');
+  msgEl.className = 'msg';
+  msgEl.textContent = msg;
+  line.appendChild(msgEl);
+  out.appendChild(line);
+  // Cap output to last 1000 lines so it doesn't grow without bound
+  while (out.children.length > 1000) out.removeChild(out.firstChild);
+  out.scrollTop = out.scrollHeight;
+}
+
+function openSerialPanel() {
+  document.getElementById('serial-panel').classList.add('show');
+  if (!serialIsSupported()) {
+    appendSerialLine('Web Serial is not supported in this browser. Use Chrome, Edge, or Opera on desktop.', 'error');
+    document.getElementById('serial-connect').disabled = true;
+  }
+}
+function closeSerialPanel() {
+  document.getElementById('serial-panel').classList.remove('show');
+}
+
+async function connectSerial() {
+  if (!serialIsSupported()) {
+    appendSerialLine('Web Serial not available in this browser.', 'error');
+    return;
+  }
+  try {
+    appendSerialLine('Requesting serial port...', 'system');
+    const port = await navigator.serial.requestPort();
+    const baud = parseInt(document.getElementById('serial-baud').value, 10);
+    await port.open({ baudRate: baud });
+    serial.port = port;
+    serial.keepReading = true;
+    setSerialStatus(`connected · ${baud} baud`, 'connected');
+    document.getElementById('serial-connect').textContent = 'Disconnect';
+    document.getElementById('serial-connect').classList.add('danger');
+    document.getElementById('serial-connect').classList.remove('primary');
+    document.getElementById('b-serial').classList.add('connected');
+    document.getElementById('serial-input').disabled = false;
+    document.getElementById('serial-send').disabled = false;
+    appendSerialLine('Connected to Arduino.', 'system');
+
+    // Set up writer
+    serial.writer = port.writable.getWriter();
+
+    // Set up reader loop
+    readSerialLoop();
+
+    // Notify on disconnect (cable unplug etc.)
+    port.addEventListener('disconnect', () => {
+      appendSerialLine('Device disconnected.', 'error');
+      handleDisconnect();
+    });
+  } catch (err) {
+    if (err.name === 'NotFoundError') {
+      appendSerialLine('No port selected.', 'system');
+    } else {
+      appendSerialLine('Connection error: ' + err.message, 'error');
+    }
+    setSerialStatus('disconnected');
+  }
+}
+
+async function readSerialLoop() {
+  serial.textDecoder = new TextDecoder();
+  while (serial.keepReading && serial.port && serial.port.readable) {
+    const reader = serial.port.readable.getReader();
+    serial.reader = reader;
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (!value) continue;
+        const chunk = serial.textDecoder.decode(value, { stream: true });
+        serial.buffer += chunk;
+        // Split on newlines; keep partial last line in buffer
+        let idx;
+        while ((idx = serial.buffer.indexOf('\n')) !== -1) {
+          let line = serial.buffer.substring(0, idx);
+          serial.buffer = serial.buffer.substring(idx + 1);
+          if (line.endsWith('\r')) line = line.slice(0, -1);
+          appendSerialLine(line);
+        }
+      }
+    } catch (err) {
+      if (serial.keepReading) {
+        appendSerialLine('Read error: ' + err.message, 'error');
+      }
+    } finally {
+      reader.releaseLock();
+      serial.reader = null;
+    }
+  }
+}
+
+async function disconnectSerial() {
+  serial.keepReading = false;
+  try {
+    if (serial.reader) await serial.reader.cancel().catch(()=>{});
+    if (serial.writer) {
+      try { serial.writer.releaseLock(); } catch(e) {}
+      serial.writer = null;
+    }
+    if (serial.port) {
+      await serial.port.close().catch(()=>{});
+      serial.port = null;
+    }
+  } catch(e) {}
+  handleDisconnect();
+}
+
+function handleDisconnect() {
+  serial.port = null;
+  serial.reader = null;
+  serial.writer = null;
+  serial.keepReading = false;
+  setSerialStatus('disconnected');
+  document.getElementById('serial-connect').textContent = 'Connect';
+  document.getElementById('serial-connect').classList.remove('danger');
+  document.getElementById('serial-connect').classList.add('primary');
+  document.getElementById('b-serial').classList.remove('connected');
+  document.getElementById('serial-input').disabled = true;
+  document.getElementById('serial-send').disabled = true;
+}
+
+async function sendSerial(text) {
+  if (!serial.writer) return;
+  const ending = document.getElementById('serial-ending').value
+    .replace('\\n', '\n').replace('\\r', '\r');
+  try {
+    const data = new TextEncoder().encode(text + ending);
+    await serial.writer.write(data);
+    appendSerialLine(text, 'sent');
+  } catch (err) {
+    appendSerialLine('Send error: ' + err.message, 'error');
+  }
+}
+
+// Wire up Serial Monitor UI events
+document.getElementById('b-serial').addEventListener('click', () => {
+  const panel = document.getElementById('serial-panel');
+  if (panel.classList.contains('show')) closeSerialPanel();
+  else openSerialPanel();
+});
+document.getElementById('serial-close').addEventListener('click', closeSerialPanel);
+document.getElementById('serial-connect').addEventListener('click', () => {
+  if (serial.port) disconnectSerial();
+  else connectSerial();
+});
+document.getElementById('serial-pause').addEventListener('click', () => {
+  serial.paused = !serial.paused;
+  const btn = document.getElementById('serial-pause');
+  btn.textContent = serial.paused ? '▶ Resume' : '⏸ Pause';
+});
+document.getElementById('serial-clear').addEventListener('click', () => {
+  document.getElementById('serial-output').innerHTML = '';
+});
+document.getElementById('serial-send').addEventListener('click', () => {
+  const inp = document.getElementById('serial-input');
+  const text = inp.value;
+  if (text === '') return;
+  sendSerial(text);
+  inp.value = '';
+});
+document.getElementById('serial-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    document.getElementById('serial-send').click();
+  }
+});
+
+if (!serialIsSupported()) {
+  document.getElementById('b-serial').title = 'Web Serial not supported in this browser';
+}
+</script>
+</body>
+</html>
